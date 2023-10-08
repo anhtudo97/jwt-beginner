@@ -23,13 +23,18 @@
       // xu ly data trc khi xuong server
       instance.interceptors.request.use(
         async (config) => {
-          console.log(config.url);
           if (
             config.url.indexOf('/login') >= 0 ||
             config.url.indexOf('/refresh-token') >= 0
           ) {
             return config;
           }
+          const token = await instance.getLocalAccessToken();
+
+          config.headers['x-token'] = token;
+
+          console.log(`Trc khi request xuong server:::`, token);
+          /*
 
           const { token, timeExpired } = await instance.getLocalAccessToken();
 
@@ -51,6 +56,7 @@
               return Promise.reject(err);
             }
           }
+          */
 
           return config;
         },
@@ -58,8 +64,35 @@
       );
 
       instance.interceptors.response.use(
-        (response) => {
-          console.log('truoc khi xuong server');
+        async (response) => {
+          console.log('sau khi server response', response.data);
+          const config = response.config;
+          if (
+            config.url.indexOf('/login') >= 0 ||
+            config.url.indexOf('/refresh-token') >= 0
+          ) {
+            return response;
+          }
+
+          const { code, msg } = response.data;
+          if (code && code === 401) {
+            if (msg && msg === 'jwt expired') {
+              console.log('Token is expired');
+              // step 1: get token from refresh token
+              const {
+                element: { accessToken },
+              } = await refreshToken();
+              if (accessToken) {
+                console.log(`Da lay lai được access token thanh cong`);
+                // step 2:
+                config.headers['x-token'] = accessToken;
+                // step 3:
+                await instance.setLocalAccessToken(accessToken);
+
+                return instance(config);
+              }
+            }
+          }
 
           return response;
         },
@@ -69,14 +102,16 @@
       // FUNCTION
       const btn_login = document.getElementById('_login');
       if (btn_login) {
+        console.log('tuanh');
         btn_login.addEventListener('click', async () => {
+          console.log('login click');
           const {
             status,
-            element: { token, timeExpired },
+            element: { accessToken },
           } = await login();
           if (status === 'success') {
             // set token vs time expired vao local storage
-            await instance.setLocalAccessToken({ token, timeExpired });
+            await instance.setLocalAccessToken(accessToken);
           }
         });
       }
@@ -103,16 +138,13 @@
         return (await instance.get('/refresh-token')).data;
       }
 
-      instance.setLocalAccessToken = async ({ token, timeExpired }) => {
-        window.localStorage.setItem(
-          'access_token',
-          JSON.stringify({ token, timeExpired }),
-        );
+      instance.setLocalAccessToken = async (token) => {
+        window.localStorage.setItem('access_token', token);
       };
       instance.getLocalAccessToken = async () => {
-        const accessToken = window.localStorage.getItem('access_token');
-
-        return JSON.parse(accessToken);
+        return window.localStorage.getItem('access_token')
+          ? window.localStorage.getItem('access_token')
+          : null;
       };
       // END FUNCTION
     </script>
