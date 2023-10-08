@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Document</title>
+    <script src="https://cdn.jsdelivr.net/npm/axios@1.1.2/dist/axios.min.js"></script>
+  </head>
+  <body>
+    <button id="_login">Login</button>
+    <button id="_getlist">Get list</button>
+
+    <script>
+      // Create instance axios
+      const instance = axios.create({
+        baseURL: '/api',
+        timeout: 3 * 1000,
+        headers: {
+          'Content-type': 'application/json',
+        },
+      });
+
+      // xu ly data trc khi xuong server
+      instance.interceptors.request.use(
+        async (config) => {
+          console.log(config.url);
+          if (
+            config.url.indexOf('/login') >= 0 ||
+            config.url.indexOf('/refresh-token') >= 0
+          ) {
+            return config;
+          }
+
+          const { token, timeExpired } = await instance.getLocalAccessToken();
+
+          const now = new Date().getTime();
+          if (timeExpired < now) {
+            try {
+              console.log(`Access token is expired`);
+              const {
+                status,
+                element: { token, timeExpired },
+              } = await refreshToken();
+              if (status === 'success') {
+                // set token vs time expired vao local storage
+                await instance.setLocalAccessToken({ token, timeExpired });
+
+                return config;
+              }
+            } catch (err) {
+              return Promise.reject(err);
+            }
+          }
+
+          return config;
+        },
+        (err) => Promise.reject(err),
+      );
+
+      instance.interceptors.response.use(
+        (response) => {
+          console.log('truoc khi xuong server');
+
+          return response;
+        },
+        (err) => Promise.reject(err),
+      );
+
+      // FUNCTION
+      const btn_login = document.getElementById('_login');
+      if (btn_login) {
+        btn_login.addEventListener('click', async () => {
+          const {
+            status,
+            element: { token, timeExpired },
+          } = await login();
+          if (status === 'success') {
+            // set token vs time expired vao local storage
+            await instance.setLocalAccessToken({ token, timeExpired });
+          }
+        });
+      }
+
+      const btn_get_list = document.getElementById('_getlist');
+      if (btn_get_list) {
+        btn_get_list.addEventListener('click', async () => {
+          const { status, elements } = await getListUser();
+          if (status === 'success') {
+            console.table(elements);
+          }
+        });
+      }
+
+      async function login() {
+        return (await instance.get('/login')).data;
+      }
+
+      async function getListUser() {
+        return (await instance.get('/users')).data;
+      }
+
+      async function refreshToken() {
+        return (await instance.get('/refresh-token')).data;
+      }
+
+      instance.setLocalAccessToken = async ({ token, timeExpired }) => {
+        window.localStorage.setItem(
+          'access_token',
+          JSON.stringify({ token, timeExpired }),
+        );
+      };
+      instance.getLocalAccessToken = async () => {
+        const accessToken = window.localStorage.getItem('access_token');
+
+        return JSON.parse(accessToken);
+      };
+      // END FUNCTION
+    </script>
+  </body>
+</html>
